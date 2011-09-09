@@ -8,7 +8,7 @@ use warnings;
 use Carp qw(croak);
 use Lingua::RU::OpenCorpora::Tokenizer::Updater;
 
-our $VERSION = 0.01;
+our $VERSION = 0.02;
 
 sub new {
     my $class = shift;
@@ -261,7 +261,7 @@ The algorithm is this:
 
 =head2 CONTEXT
 
-In terms of this module context is just a binary vector, currently consisting of 27 elements. It's calculated for every character of the text, then it gets converted to decimal representation and then it's checked against L<VECTORS FILE>. Every element is a result of a simple function like C<_is_latin>, C<_is_digit>, C<_is_bracket> and etc. applied to an input character and few characters around it.
+In terms of this module context is just a binary vector, currently consisting of 27 elements. It's calculated for every character of the text, then it gets converted to decimal representation and then it's checked against L<VECTORS FILE>. Every element is a result of a simple function like C<_is_latin>, C<_is_digit>, C<_is_bracket> and etc. applied to the input character and few characters around it.
 
 =head2 VECTORS FILE
 

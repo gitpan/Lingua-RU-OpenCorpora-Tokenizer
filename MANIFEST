@@ -14,10 +14,13 @@ lib/Lingua/RU/OpenCorpora/Tokenizer.pm
 lib/Lingua/RU/OpenCorpora/Tokenizer/Updater.pm
 Makefile.PL
 MANIFEST			This list of files
+MANIFEST.SKIP
 META.yml
 README
 script/opencorpora-update-tokenizer
+share/exceptions
 share/hyphens
+share/prefixes
 share/vectors
 t/01-load.t
 t/02-basic.t

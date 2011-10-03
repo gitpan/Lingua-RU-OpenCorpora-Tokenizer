@@ -1,14 +1,13 @@
 package Lingua::RU::OpenCorpora::Tokenizer;
 
 use utf8;
-use v5.10;
 use strict;
 use warnings;
 
 use Carp qw(croak);
 use Lingua::RU::OpenCorpora::Tokenizer::Updater;
 
-our $VERSION = 0.02;
+our $VERSION = 0.03;
 
 sub new {
     my $class = shift;
@@ -20,23 +19,30 @@ sub new {
 }
 
 sub tokens {
-    my($self, $text) = @_;
+    my($self, $text, $options) = @_;
 
-    $self->_do_tokenize($text);
+    $options = {} unless defined $options;
+    $options->{want_tokens} = 1;
+    $options->{threshold}   = 1 unless defined $options->{threshold};
+
+    $self->_do_tokenize($text, $options);
 
     $self->{tokens};
 }
 
 sub tokens_bounds {
-    my($self, $text) = @_;
+    my($self, $text, $options) = @_;
 
-    $self->_do_tokenize($text);
+    $options = {} unless defined $options;
+    $options->{want_tokens} = 0;
+
+    $self->_do_tokenize($text, $options);
 
     $self->{bounds};
 }
 
 sub _do_tokenize {
-    my($self, $text) = @_;
+    my($self, $text, $options) = @_;
 
     my $chars = $self->{chars} = [split //, $text];
     $self->{bounds} = [];
@@ -44,80 +50,158 @@ sub _do_tokenize {
 
     my $token;
     for(my $i = 0; $i <= $#{ $chars }; $i++) {
-        my $context = {
+        my $ctx = {
             char      => $chars->[$i],
             prevchar  => $i ? $chars->[$i - 1] : '',
-            nextchar  => $chars->[$i + 1] // '',
-            nnextchar => $chars->[$i + 2] // '',
+            nextchar  => $chars->[$i + 1],
+            nnextchar => $chars->[$i + 2],
             pos       => $i,
         };
+        not defined $ctx->{$_} and $ctx->{$_} = ''
+            for qw(nextchar nnextchar);
 
-        $self->_get_char_chains($context);
-        $self->_vector($context);
+        $self->_get_char_sequences($ctx);
+        $self->_vector($ctx);
 
-        $token .= $chars->[$i];
+        my $coeff = $self->{vectors}{$ctx->{vector}};
+        $coeff    = 0.5 unless defined $coeff;
 
-        my $coeff = $self->{vectors}{$context->{vector}} // 0.5;
-        if($coeff) {
-            push @{ $self->{bounds} }, [$context->{pos} + 2, $coeff];
+        if($options->{want_tokens}) {
+            $token .= $chars->[$i];
 
-            $token =~ s{^\s+|\s+$}{};
-            push @{ $self->{tokens} }, $token if $token;
-            $token = '';
+            if(
+                $coeff >= $options->{threshold}
+                or $ctx->{pos} == $#{ $chars }
+            )
+            {
+                $token =~ s{^\s+|\s+$}{};
+                push @{ $self->{tokens} }, $token if $token;
+                $token = '';
+            }
+        }
+        else {
+            if($coeff) {
+                push @{ $self->{bounds} }, [$ctx->{pos} + 2, $coeff];
+            }
         }
     }
 }
 
-sub _get_char_chains {
-    my($self, $context) = @_;
+sub _get_char_sequences {
+    my($self, $ctx) = @_;
 
-    my $chain = my $chain_left = my $chain_right = '';
+    my $seq = my $seq_left = my $seq_right = '';
+    my $spacer = '';
 
-    if($self->_is_hyphen($context->{nextchar}) or $self->_is_hyphen($context->{char})) {
+    if(
+        $ctx->{nextchar} =~ m|([-./?=:&"!+()])|
+        or $ctx->{char} =~ m|([-./?=:&"!+()])|
+    )
+    {
+        $spacer = $1;
+    }
+
+    if(length $spacer) {
         # go left
-        for(my $i = $context->{pos}; $i >= 0; $i--) {
+        for(my $i = $ctx->{pos}; $i >= 0; $i--) {
             my $ch = $self->{chars}[$i];
-            if($self->_is_cyr($ch) or $self->_is_hyphen($ch) or $self->_is_single_quote($ch)) {
-                $chain_left = $ch . $chain_left;
+
+            my $case1 = !!(
+                $self->_is_hyphen($spacer)
+                and (
+                    $self->_is_cyr($ch)
+                    or $self->_is_hyphen($ch)
+                    or $self->_is_single_quote($ch)
+                )
+            );
+            my $case2 = !!(
+                not $self->_is_hyphen($spacer)
+                and not $self->_is_space($ch)
+            );
+
+            if($case1 or $case2) {
+                $seq_left = $ch . $seq_left;
             }
             else {
                 last;
             }
 
-            $chain_left =~ s/-$//;
+            $seq_left = substr $seq_left, 0, -1
+                if substr($seq_left, -1) eq $spacer;
         }
 
         # go right
-        for(my $i = $context->{pos} + 1; $i <= $#{ $self->{chars} }; $i++) {
+        for(my $i = $ctx->{pos} + 1; $i <= $#{ $self->{chars} }; $i++) {
             my $ch = $self->{chars}[$i];
-            if($self->_is_cyr($ch) or $self->_is_hyphen($ch) or $self->_is_single_quote($ch)) {
-                $chain_right .= $ch;
+
+            my $case1 = !!(
+                $self->_is_hyphen($spacer)
+                and (
+                    $self->_is_cyr($ch)
+                    or $self->_is_hyphen($ch)
+                    or $self->_is_single_quote($ch)
+                )
+            );
+            my $case2 = !!(
+                not $self->_is_hyphen($spacer)
+                and not $self->_is_space($ch)
+            );
+
+            if($case1 or $case2) {
+                $seq_right .= $ch;
             }
             else {
                 last;
             }
 
-            $chain_right =~ s/^-//;
+            $seq_right = substr $seq_right, 0, 1
+                if substr($seq_right, -1) eq $spacer;
         }
 
-        $chain = $chain_left . '-' . $chain_right;
+        $seq = join '', $seq_left, $spacer, $seq_right;
     }
 
-    $context->{chain}       = $chain;
-    $context->{chain_left}  = $chain_left;
-    $context->{chain_right} = $chain_right;
+    $ctx->{spacer}    = $spacer;
+    $ctx->{seq}       = $seq;
+    $ctx->{seq_left}  = $seq_left;
+    $ctx->{seq_right} = $seq_right;
 
     return;
 }
 
 sub _vector {
-    my($self, $context) = @_;
+    my($self, $ctx) = @_;
 
-    my $vec = join '',
-              map $_->[0]($self, @$context{@$_[1 .. $#$_]}),
-              @{ $self->{vector_functions} };
+    my $spacer           = !!length $ctx->{spacer};
+    my $spacer_is_hyphen = $spacer && $self->_is_hyphen($ctx->{spacer});
 
-    $context->{vector} = oct '0b' . $vec;
+    my @bits = (
+        $self->_char_class($ctx->{char}),
+        $self->_char_class($ctx->{nextchar}),
+        $self->_is_digit($ctx->{prevchar}),
+        $self->_is_digit($ctx->{nnextchar}),
+        $spacer_is_hyphen
+            ? $self->_is_dict_seq($ctx->{seq})
+            : 0,
+        $spacer_is_hyphen
+            ? $self->_is_suffix($ctx->{seq_right})
+            : 0,
+        $self->_is_same_pm($ctx->{char}, $ctx->{nextchar}),
+        ($spacer and not $spacer_is_hyphen)
+            ? $self->_looks_like_url($ctx->{seq}, $ctx->{seq_right})
+            : 0,
+        ($spacer and not $spacer_is_hyphen)
+            ? $self->_is_exception_seq($ctx->{seq})
+            : 0,
+        $spacer_is_hyphen
+            ? $self->_is_prefix($ctx->{seq_left})
+            : 0,
+        ($self->_is_colon($ctx->{spacer}) and !!length $ctx->{seq_right})
+            ? $self->_looks_like_time($ctx->{seq_left}, $ctx->{seq_right})
+            : 0,
+    );
+
+    $ctx->{vector} = oct join '', '0b', @bits;
 
     return;
 }
@@ -125,38 +209,24 @@ sub _vector {
 sub _init {
     my $self = shift;
 
-    $self->{vector_functions} = [
-        [\&_is_space,        'char',            ],
-        [\&_is_space,        'nextchar',        ],
-        [\&_is_pmark,        'char',            ],
-        [\&_is_pmark,        'nextchar',        ],
-        [\&_is_latin,        'char',            ],
-        [\&_is_latin,        'nextchar',        ],
-        [\&_is_cyr,          'char',            ],
-        [\&_is_cyr,          'nextchar',        ],
-        [\&_is_hyphen,       'char',            ],
-        [\&_is_hyphen,       'nextchar',        ],
-        [\&_is_digit,        'prevchar',        ],
-        [\&_is_digit,        'char',            ],
-        [\&_is_digit,        'nextchar',        ],
-        [\&_is_digit,        'nnextchar',       ],
-        [\&_is_dict_chain,   'chain',           ],
-        [\&_is_dot,          'char',            ],
-        [\&_is_dot,          'nextchar',        ],
-        [\&_is_bracket1,     'char',            ],
-        [\&_is_bracket1,     'nextchar',        ],
-        [\&_is_bracket2,     'char',            ],
-        [\&_is_bracket2,     'nextchar',        ],
-        [\&_is_single_quote, 'char',            ],
-        [\&_is_single_quote, 'nextchar',        ],
-        [\&_is_suffix,       'chain_right',     ],
-        [\&_is_same_pm,      'char', 'nextchar',],
-        [\&_is_slash,        'char',            ],
-        [\&_is_slash,        'nextchar',        ],
-    ];
-
     $self->_load_vectors;
-    $self->_load_hyphens;
+    $self->_load_list('hyphens');
+    $self->_load_list('prefixes');
+    $self->_load_list('exceptions');
+
+    return;
+}
+
+sub _load_list {
+    my($self, $list) = @_;
+
+    my $file = Lingua::RU::OpenCorpora::Tokenizer::Updater->_path($list);
+    open my $fh, '<:utf8', $file or croak "$file: $!";
+    <$fh>; # skip version
+    my %data = map { chomp; $_, undef } <$fh>;
+    close $fh;
+
+    $self->{$list} = \%data;
 
     return;
 }
@@ -175,21 +245,7 @@ sub _load_vectors {
     return;
 }
 
-sub _load_hyphens {
-    my $self = shift;
-
-    my $file = Lingua::RU::OpenCorpora::Tokenizer::Updater->_path('hyphens');
-    open my $fh, '<:utf8', $file or croak "$file: $!";
-    <$fh>; # skip version
-    my %hyphens = map { chomp; $_, undef } <$fh>;
-    close $fh;
-
-    $self->{hyphens} = \%hyphens;
-
-    return;
-}
-
-sub _is_pmark        { $_[1] =~ /^[,?!":;\xAB\xBB]$/ ? 1 : 0 }
+sub _is_pmark        { $_[1] =~ /^[,?!";«»]$/ ? 1 : 0 }
 
 sub _is_latin        { $_[1] =~ /^[a-zA-Z]$/ ? 1 : 0 }
 
@@ -213,14 +269,80 @@ sub _is_single_quote { $_[1] eq "'" ? 1 : 0 }
 
 sub _is_slash        { $_[1] eq '/' ? 1 : 0 }
 
+sub _is_colon        { $_[1] eq ':' ? 1 : 0 }
+
 sub _is_same_pm      { $_[1] eq $_[2] ? 1 : 0 }
 
-sub _is_dict_chain {
-    my($self, $chain) = @_;
+sub _is_prefix {
+    my($self, $seq) = @_;
 
-    return 0 if not $chain or $chain =~ /^-/;
+    exists $self->{prefixes}{lc $seq} ? 1 : 0;
+}
 
-    exists $self->{hyphens}{$chain} ? 1 : 0;
+sub _is_dict_seq {
+    my($self, $seq) = @_;
+
+    return 0 if not $seq or $seq =~ /^-/;
+
+    exists $self->{hyphens}{$seq} ? 1 : 0;
+}
+
+sub _is_exception_seq {
+    my($self, $seq) = @_;
+
+    return 1 if $self->{exceptions}{$seq};
+
+    return 0 unless $seq =~ /^\W|\W$/;
+
+    $seq =~ s/^[^A-Za-zА-ЯЁа-яё0-9]+//;
+    return 1 if exists $self->{exceptions}{$seq};
+
+    while($seq =~ s/^[^A-Za-zА-ЯЁа-яё0-9]+//) {
+        return 1 if exists $self->{exceptions}{$seq};
+    }
+
+    0;
+}
+
+sub _looks_like_url {
+    my($self, $seq, $seq_right) = @_;
+
+    return 0 unless $seq_right;
+    return 0 if $seq =~ /^\./;
+
+    ($seq =~ m{^\W*https?://} or $seq =~ m{.\.(?:ru|ua|com|org|gov|us|ру|рф)\W*$}i)
+        ? 1
+        : 0;
+}
+
+sub _looks_like_time {
+    my($self, $seq_left, $seq_right) = @_;
+
+    return 0 if $seq_left  !~ /^[0-9]{1,2}$/
+             or $seq_right !~ /^[0-9]{2}$/;
+
+    ($seq_left < 24 and $seq_right < 60)
+        ? 1
+        : 0;
+}
+
+sub _char_class {
+    my($self, $char) = @_;
+
+    my $bits = $self->_is_cyr($char)          ? '0001' :
+               $self->_is_space($char)        ? '0010' :
+               $self->_is_dot($char)          ? '0011' :
+               $self->_is_pmark($char)        ? '0100' :
+               $self->_is_hyphen($char)       ? '0101' :
+               $self->_is_digit($char)        ? '0110' :
+               $self->_is_latin($char)        ? '0111' :
+               $self->_is_bracket1($char)     ? '1000' :
+               $self->_is_bracket2($char)     ? '1001' :
+               $self->_is_single_quote($char) ? '1010' :
+               $self->_is_slash($char)        ? '1011' :
+               $self->_is_colon($char)        ? '1100' : '0000';
+
+    split //, $bits;
 }
 
 1;
@@ -261,7 +383,7 @@ The algorithm is this:
 
 =head2 CONTEXT
 
-In terms of this module context is just a binary vector, currently consisting of 27 elements. It's calculated for every character of the text, then it gets converted to decimal representation and then it's checked against L<VECTORS FILE>. Every element is a result of a simple function like C<_is_latin>, C<_is_digit>, C<_is_bracket> and etc. applied to the input character and few characters around it.
+In terms of this module context is just a binary vector, currently consisting of 17 elements. It's calculated for every character of the text, then it gets converted to decimal representation and then it's checked against L<VECTORS FILE>. Every element is a result of a simple function like C<_is_latin>, C<_is_digit>, C<_is_bracket> and etc. applied to the input character and few characters around it.
 
 =head2 VECTORS FILE
 
@@ -275,15 +397,39 @@ Contains a list of hyphenated Russian words. Used in vectors calculations.
 
 Built by OpenCorpora project from semi-automatically annotated corpus.
 
+=head2 EXCEPTIONS FILE
+
+Contains a list of char sequences that are not subjects to tokenizing.
+
+Built by OpenCorpora project from semi-automatically annotated corpus.
+
+=head2 PREFIXES FILE
+
+Contains a list of common prefixes for decompound words.
+
+Built by OpenCorpora project from semi-automatically annotated corpus.
+
 =head1 METHODS
 
 =head2 new
 
 Constructs and initializes new tokenizer object.
 
-=head2 tokens($text)
+=head2 tokens($text [, $options])
 
 Takes text as input and splits it into tokens. Returns a reference to an array of tokens.
+
+You can also pass a hashref with options as a second argument. Current options:
+
+=over 4
+
+=item threshold
+
+Minimal probability value for tokens boundary. Boundaries with lower probability are excluded from consideration.
+
+Default value is 1, which makes tokenizer do splitting only when it's confident.
+
+=back
 
 =head2 tokens_bounds($text)
 

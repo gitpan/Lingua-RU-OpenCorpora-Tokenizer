@@ -26,7 +26,7 @@ DESCRIPTION
 
   CONTEXT
     In terms of this module context is just a binary vector, currently
-    consisting of 27 elements. It's calculated for every character of the
+    consisting of 17 elements. It's calculated for every character of the
     text, then it gets converted to decimal representation and then it's
     checked against "VECTORS FILE". Every element is a result of a simple
     function like "_is_latin", "_is_digit", "_is_bracket" and etc. applied
@@ -44,13 +44,33 @@ DESCRIPTION
 
     Built by OpenCorpora project from semi-automatically annotated corpus.
 
+  EXCEPTIONS FILE
+    Contains a list of char sequences that are not subjects to tokenizing.
+
+    Built by OpenCorpora project from semi-automatically annotated corpus.
+
+  PREFIXES FILE
+    Contains a list of common prefixes for decompound words.
+
+    Built by OpenCorpora project from semi-automatically annotated corpus.
+
 METHODS
   new
     Constructs and initializes new tokenizer object.
 
-  tokens($text)
+  tokens($text [, $options])
     Takes text as input and splits it into tokens. Returns a reference to an
     array of tokens.
+
+    You can also pass a hashref with options as a second argument. Current
+    options:
+
+    threshold
+        Minimal probability value for tokens boundary. Boundaries with lower
+        probability are excluded from consideration.
+
+        Default value is 1, which makes tokenizer do splitting only when
+        it's confident.
 
   tokens_bounds($text)
     Takes text as input and finds bounds of tokens in the text. It doesn't

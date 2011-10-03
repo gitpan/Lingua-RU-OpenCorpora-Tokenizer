@@ -9,26 +9,36 @@ use Carp qw(croak);
 use File::ShareDir qw(dist_dir);
 use IO::Uncompress::Gunzip qw(gunzip $GunzipError);
 
-our $VERSION = 0.02;
+our $VERSION = 0.03;
 
 sub new {
     my $class = shift;
 
     my $self = bless {
-        vectors_latest => 'http://wiki.iphil.ru/corpus/files/tokenizer/vectors.latest',
-        vectors_url    => 'http://wiki.iphil.ru/corpus/files/tokenizer/vectors.gz',
-        hyphens_latest => 'http://wiki.iphil.ru/corpus/files/tokenizer/hyphens.latest',
-        hyphens_url    => 'http://wiki.iphil.ru/corpus/files/tokenizer/hyphens.gz',
+        vectors_latest    => 'http://opencorpora.org/files/export/tokenizer_data/vectors.latest',
+        vectors_url       => 'http://opencorpora.org/files/export/tokenizer_data/vectors.gz',
+        hyphens_latest    => 'http://opencorpora.org/files/export/tokenizer_data/hyphens.latest',
+        hyphens_url       => 'http://opencorpora.org/files/export/tokenizer_data/hyphens.gz',
+        exceptions_latest => 'http://opencorpora.org/files/export/tokenizer_data/exceptions.latest',
+        exceptions_url    => 'http://opencorpora.org/files/export/tokenizer_data/exceptions.gz',
+        prefixes_latest   => 'http://opencorpora.org/files/export/tokenizer_data/prefixes.latest',
+        prefixes_url      => 'http://opencorpora.org/files/export/tokenizer_data/prefixes.gz',
+
     }, $class;
     $self->_init;
 
     $self;
 }
 
-sub vectors_update_available { $_[0]->_update_available('vectors') }
-sub hyphens_update_available { $_[0]->_update_available('hyphens') }
-sub update_vectors { $_[0]->_update('vectors') }
-sub update_hyphens { $_[0]->_update('hyphens') }
+sub vectors_update_available    { $_[0]->_update_available('vectors')    }
+sub hyphens_update_available    { $_[0]->_update_available('hyphens')    }
+sub exceptions_update_available { $_[0]->_update_available('exceptions') }
+sub prefixes_update_available   { $_[0]->_update_available('prefixes')   }
+
+sub update_vectors    { $_[0]->_update('vectors')    }
+sub update_hyphens    { $_[0]->_update('hyphens')    }
+sub update_exceptions { $_[0]->_update('exceptions') }
+sub update_prefixes   { $_[0]->_update('prefixes')   }
 
 sub _init {
     my $self = shift;
@@ -37,31 +47,20 @@ sub _init {
         agent     => __PACKAGE__ . ' ' . $VERSION . ', ',
         env_proxy => 1,
     );
-    $ua->default_header('Accept-Encoding' => 'gzip, identity');
-    my %m_spec = (
-        m_code       => 200,
-        m_media_type => 'application/x-gzip',
-    );
-    $ua->add_handler(
-        response_header => sub { $_[0]->{default_add_content} = 1 },
-        %m_spec,
-    );
-    $ua->add_handler(
-        response_done => \&_uncompress,
-        %m_spec,
-    );
     $self->{ua} = $ua;
 
-    my $vectors_file = $self->_path('vectors');
-    open my $fh, '<', $vectors_file or croak "$vectors_file: $!";
-    $self->{vectors_current} = <$fh>;
-    chomp $self->{vectors_current};
-    close $fh;
+    $self->_get_current_version($_) for qw(vectors hyphens prefixes exceptions);
 
-    my $hyphens_file = $self->_path('hyphens');
-    open $fh, '<', $hyphens_file or croak "$hyphens_file: $!";
-    $self->{hyphens_current} = <$fh>;
-    chomp $self->{hyphens_current};
+    return;
+}
+
+sub _get_current_version {
+    my($self, $mode) = @_;
+
+    my $file = $self->_path($mode);
+    open my $fh, '<', $file or croak "$file: $!";
+    $self->{"${mode}_current"} = <$fh>;
+    chomp $self->{"${mode}_current"};
     close $fh;
 
     return;
@@ -80,10 +79,15 @@ sub _update_available {
 sub _update {
     my($self, $mode) = @_;
 
-    my $res = $self->{ua}->get(
-        $self->{"${mode}_url"},
-        ':content_file' => $self->_path($mode),
-    );
+    my $url = $self->{"${mode}_url"};
+    my $res = $self->{ua}->get($url);
+    croak "$url: " . $res->code unless $res->is_success;
+
+    my $file = $self->_path($mode);
+    gunzip \$res->content, \my $output or croak "$file: $GunzipError";
+    open my $fh, '>', $file or croak "$file: $!";
+    print $fh $output;
+    close $fh;
 
     $res->is_success;
 }
@@ -92,16 +96,6 @@ sub _path {
     my($self, $mode) = @_;
 
     File::Spec->catfile(dist_dir('Lingua-RU-OpenCorpora-Tokenizer'), $mode);
-}
-
-sub _uncompress {
-    my $res = shift;
-    my $output;
-
-    gunzip \$res->content, \$output or croak $GunzipError;
-    $res->content($output);
-
-    return;
 }
 
 1;

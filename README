@@ -54,9 +54,18 @@ DESCRIPTION
 
     Built by OpenCorpora project from semi-automatically annotated corpus.
 
+    NOTE: all files are stored as GZip archives and are not supposed to be
+    edited manually.
+
 METHODS
-  new
+  new(%args)
     Constructs and initializes new tokenizer object.
+
+    Arguments are:
+
+    data_dir
+        Path to a directory with OpenCorpora data. Optional. Defaults to
+        distribution directory (see File::ShareDir).
 
   tokens($text [, $options])
     Takes text as input and splits it into tokens. Returns a reference to an

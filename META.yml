@@ -6,7 +6,6 @@ build_requires:
   ExtUtils::MakeMaker: 6.42
   Test::Deep: 0
   Test::Exception: 0
-  Test::Number::Delta: 0
 configure_requires:
   ExtUtils::MakeMaker: 6.42
 distribution_type: module
@@ -30,4 +29,4 @@ requires:
   parent: 0
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.05
+version: 0.06

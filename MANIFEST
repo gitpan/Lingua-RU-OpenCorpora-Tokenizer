@@ -14,7 +14,6 @@ lib/Lingua/RU/OpenCorpora/Tokenizer.pm
 lib/Lingua/RU/OpenCorpora/Tokenizer/List.pm
 lib/Lingua/RU/OpenCorpora/Tokenizer/Updater.pm
 lib/Lingua/RU/OpenCorpora/Tokenizer/Vectors.pm
-Lingua-RU-OpenCorpora-Tokenizer-0.04.tar.gz
 Makefile.PL
 MANIFEST			This list of files
 MANIFEST.SKIP

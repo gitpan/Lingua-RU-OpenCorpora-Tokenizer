@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use parent 'Lingua::RU::OpenCorpora::Tokenizer::List';
 
-our $VERSION = 0.05;
+our $VERSION = 0.06;
 
 use File::ShareDir qw(dist_dir);
 
@@ -19,11 +19,7 @@ sub new {
     $self;
 }
 
-sub in_list {
-    my($self, $value) = @_;
-
-    $self->{data}{$value};
-}
+sub in_list { $_[0]->{data}{$_[1]} }
 
 sub _parse_list {
     my($self, $list) = @_;

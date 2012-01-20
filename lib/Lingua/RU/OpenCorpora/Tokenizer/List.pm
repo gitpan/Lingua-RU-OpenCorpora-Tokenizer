@@ -1,9 +1,10 @@
 package Lingua::RU::OpenCorpora::Tokenizer::List;
 
+use utf8;
 use strict;
 use warnings;
 
-our $VERSION = 0.05;
+our $VERSION = 0.06;
 
 use IO::File;
 use File::Spec;
@@ -12,7 +13,7 @@ use Encode qw(decode);
 use IO::Uncompress::Gunzip;
 use File::ShareDir qw(dist_dir);
 
-sub data_version { 0.04 }
+sub data_version { 0.05 }
 
 sub new {
     my($class, $name, $args) = @_;
@@ -33,11 +34,7 @@ sub new {
     $self;
 }
 
-sub in_list {
-    my($self, $value) = @_;
-
-    exists $self->{data}{$value};
-}
+sub in_list { exists $_[0]->{data}{lc $_[1]} }
 
 sub _load {
     my $self = shift;
@@ -47,7 +44,12 @@ sub _load {
 
     chomp($self->{version} = $fh->getline);
 
-    my @data = map decode('utf-8', $_), $fh->getlines;
+    my @data = map decode('utf-8', lc), $fh->getlines;
+
+    # workaround for The Unicode Bug
+    # see https://metacpan.org/module/perlunicode#The-Unicode-Bug
+    utf8::upgrade($_) for @data;
+
     $self->_parse_list(\@data);
 
     $fh->close;
